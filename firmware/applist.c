@@ -94,6 +94,12 @@ const struct app subapps[]={
    .keypress=rngapp_keypress
   },
 #endif
+#ifdef TIMER_APP
+  //Timer
+  {.name="timer", .init=timer_init, .draw=timer_draw, .exit=timer_exit,
+   .keypress=timer_keypress
+  },
+#endif
 #ifdef TUNER_APP
   //Tuner Tool
   {.name="tuner", .init=tuner_init, .draw=tuner_draw, .exit=tuner_exit,
