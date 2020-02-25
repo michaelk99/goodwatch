@@ -205,7 +205,7 @@ void stopwatch_draw(int forced){
       hourhex=int2bcd(hour);
     }
 
-    if((enabletimer)&&(hourtimer==hour)&&(mintimer==min)&&(sectimer==sec)){
+    if((enabletimer)&&(hour==hourtimer)&&(min==mintimer)&&(sec==sectimer)&&(subs==0)){
         tone(2048, 250);
         tone(1024, 250);
         tone(512, 250);
