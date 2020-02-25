@@ -19,7 +19,7 @@
 #include "stopwatch.h"
 #include "apps/clock.h"
 
-static int counting=0, showtime=0;
+static int counting=0, showtime=0, settingtimer=0;
 
 /* It's a crying shame, but you'll break the code if you increase this
    count to a long, because repeated divisions in rendering will take
@@ -34,6 +34,12 @@ static uint8_t hourhex;
 static uint8_t min, minhex;
 static uint8_t sec, sechex;
 
+static uint8_t hourtimer;
+static uint8_t mintimer;
+static uint8_t sectimer;
+
+static uint8_t enabletimer;
+
 
 //! Renders the low bits of the count in quarter seconds.
 static const char subs[]={0, 0x25, 0x50, 0x75};
@@ -42,6 +48,10 @@ static const char subs[]={0, 0x25, 0x50, 0x75};
 void stopwatch_init(){
   //Zero the count.
   count=hour=hourhex=min=minhex=sec=sechex=0;
+  mintimer=3;
+  hourtimer=sectimer=0;
+
+  enabletimer=0;
   
   //Start off without counting.
   counting=0;
@@ -58,26 +68,75 @@ int stopwatch_exit(){
 
 //! A button has been pressed for the stopwatch.
 int stopwatch_keypress(char ch){
+  unsigned char inputdigit=0;
   /* For now, we support only two buttons.  + stops and starts the
      count, while 0 resets the counter.
    */
-  
-  switch(ch){
-  case '+':  //Pause/Resume the count.
-    counting=!counting;
-    break;
-  case '0':  //Zero the count.
-    count=hour=hourhex=min=minhex=sec=sechex=0;
-    break;
-  case '/':  //Briefly show the clock time.
-    showtime=1;
-    break;
-  default:
-    showtime=0;
-    return 1;  //Redraw the whole screen on key-up.
-    break;
+  if(!settingtimer){
+    switch(ch){
+    case '+':  //Pause/Resume the count.
+      counting=!counting;
+      break;
+    case '0':  //Zero the count.
+      if(!settingtimer)
+        count=hour=hourhex=min=minhex=sec=sechex=0;
+      else
+
+      break;
+    case '/':  //Briefly show the clock time.
+      showtime=1;
+      break;
+    case '=': //go into set timer mode
+      if(!counting)
+        settingtimer=1;
+      break;
+    case '4':
+      if(!enabletimer)
+        enabletimer=0xFF;
+      else
+        enabletimer=0x00;
+      break;
+    default:
+      showtime=0;
+      return 1;  //Redraw the whole screen on key-up.
+      break;
+    }
+  } else{
+     //We only handle numbers here.
+    if(ch=='=') // exit set timer mode
+      settingtimer=0;
+    else if((ch&0x30)==0x30)
+      inputdigit=ch&0x0F;
+    else
+      return 1;
+
+    switch(settingtimer){
+       case 1:         //Hour
+        hourtimer=inputdigit*10+hourtimer%10;
+        settingtimer++;
+        break;
+      case 2:
+        hourtimer=hourtimer-hourtimer%10+inputdigit;
+        settingtimer++;
+        break;
+      case 3:         //Minute
+        mintimer=inputdigit*10+mintimer%10;
+        settingtimer++;
+        break;
+      case 4:
+        mintimer=mintimer-mintimer%10+inputdigit;
+        settingtimer++;
+        break;
+      case 5:         //Second
+        sectimer=inputdigit*10+sectimer%10;
+        settingtimer++;
+        break;
+      case 6:
+        sectimer=sectimer-sectimer%10+inputdigit;
+      default:
+        settingtimer=0; // exit set timer mode after last digit and in any other case
+    }
   }
-  
   /* Stopwatch uses rendering frequency to count time, so we don't
      redraw after a keypress when we are counting. */
   return !counting;
@@ -99,34 +158,48 @@ void stopwatch_draw(int forced){
   if(!forced && !counting)
     return;
   
-  //Increment the count if we're counting.
-  if(counting)
-    count++;
+  if(settingtimer<1){
+    //Increment the count if we're counting.
+    if(counting)
+      count++;
 
+    //Update the subhex field.
+    subhex=subs[count&3];
 
-  //Update the subhex field.
-  subhex=subs[count&3];
+    //Handle the second rollover every forth tick.
+    if((count&3)==3){
+      sec++;
+      sechex=int2bcd(sec);
+    }
 
-  //Handle the second rollover every forth tick.
-  if((count&3)==3){
-    sec++;
-    sechex=int2bcd(sec);
-  }
+    //Handle the minute rollover every 60 seconds.
+    if(sec>=60){
+      sec-=60;
+      sechex=int2bcd(sec);
+      min++;
+      minhex=int2bcd(min);
+    }
+    
+    //Handle hour rollover every 60 minutes
+    if(min>=60){
+      min-=60;
+      minhex=int2bcd(min);
+      hour++;
+      hourhex=int2bcd(hour);
+    }
 
-  //Handle the minute rollover every 60 seconds.
-  if(sec>=60){
-    sec-=60;
-    sechex=int2bcd(sec);
-    min++;
-    minhex=int2bcd(min);
-  }
-  
-  //Handle hour rollover every 60 minutes
-  if(min>=60){
-    min-=60;
-    minhex=int2bcd(min);
-    hour++;
-    hourhex=int2bcd(hour);
+    if((enabletimer==0xFF) && ((hourtimer>0)||(mintimer>0)||(sectimer>0))){
+      setplus(1);
+      if((hourtimer==hour)&&(mintimer==min)&&(sectimer==sec)){
+        tone(2048, 250);
+      }
+    } else{
+      setplus(0);
+    }
+  } else{
+    sechex=int2bcd(sectimer);
+    minhex=int2bcd(mintimer);
+    hourhex=int2bcd(hourtimer);
   }
 
   
@@ -147,7 +220,7 @@ void stopwatch_draw(int forced){
   setcolon((count>>1)&1);
   
   //We either draw hhmmss or mmssSS.
-  if(hour){ //hhmmss
+  if(hour || (settingtimer>0)){ //hhmmss
     lcd_digit(1,sechex>>4);
     lcd_digit(0,sechex&0xF);
     
